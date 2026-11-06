@@ -1,0 +1,151 @@
+# frozen_string_literal: true
+
+################################################################################################
+# Copyright 2023 GlobalFoundries PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+################################################################################################
+
+#================================================
+# --------------- CUSTOM CLASSES ----------------
+#================================================
+
+#=========== CUSTOM READER ===========
+class SubcircuitModelsReader < RBA::NetlistSpiceReaderDelegate
+  def parse_element(sup, element)
+    super
+  rescue StandardError
+    case element
+    when 'C'
+      super("#{sup} C=2e-16", element)
+    when 'R'
+      super("#{sup} R=0", element)
+    else
+      super
+    end
+  end
+
+  # rubocop:disable-next Metrics/ParameterLists
+  def element(circuit, ele, name, model, value, nets, params)
+    case ele
+    when 'C'
+      handle_capacitor(circuit, name, model, nets, params)
+    when 'R'
+      handle_resistor(circuit, name, model, nets, params)
+    else
+      super
+    end
+  end
+
+  private
+
+  def handle_capacitor(circuit, name, model, nets, params)
+    error('Capacitor needs two nodes') unless nets.size == 2
+
+    cls = ensure_device_class(circuit, model, RBA::DeviceClassCapacitor)
+    device = circuit.create_device(cls, name)
+    connect_terminals(device, %w[A B], nets)
+
+    device.set_parameter('A', calc_area(params) * 1e12)
+    device.set_parameter('P', calc_perimeter(params) * 2e6)
+    device.set_parameter('C', params['C'] || 0.0)
+  end
+
+  def handle_resistor(circuit, name, model, nets, params)
+    return error('Resistor needs two or three nodes') unless [2, 3].include?(nets.size)
+
+    cls_type = nets.size == 3 ? RBA::DeviceClassResistorWithBulk : RBA::DeviceClassResistor
+    cls = ensure_device_class(circuit, model, cls_type)
+    terminals = nets.size == 3 ? %w[A B W] : %w[A B]
+
+    device = circuit.create_device(cls, name)
+    connect_terminals(device, terminals, nets)
+    apply_resistor_params(device, params)
+  end
+
+  def apply_resistor_params(device, params)
+    w = params['W'] || 0.0
+    par = params['PAR'] || 1.0
+    l = params['L'] || 0.0
+    s = params['S'] || 1.0
+    r = params['R'] || 0.0
+
+    device.set_parameter('W', w * par * 1e6)
+    device.set_parameter('L', l * s * 1e6)
+    device.set_parameter('R', r * s / par)
+  end
+
+  def ensure_device_class(circuit, model, device_class_type)
+    existing = circuit.netlist.device_class_by_name(model)
+    return existing if existing
+
+    cls = device_class_type.new
+    cls.name = model
+    circuit.netlist.add(cls)
+    cls
+  end
+
+  def connect_terminals(device, terminals, nets)
+    terminals.each_with_index { |t, index| device.connect_terminal(t, nets[index]) }
+  end
+
+  def calc_area(params)
+    (params['W'] || 0.0) * (params['L'] || 0.0) * (params['M'] || 1.0)
+  end
+
+  def calc_perimeter(params)
+    ((params['W'] || 0.0) + (params['L'] || 0.0)) * (params['M'] || 1.0)
+  end
+end
+
+# rubocop:disable Style/OneClassPerFile
+# 4 terminals resistor device extractor
+class BResistor < RBA::DeviceClassResistorWithBulk
+  def initialize
+    super
+    enable_parameter('R', false)
+    enable_parameter('W', true)
+    enable_parameter('L', true)
+  end
+end
+
+# 3 terminals resistor device extractor
+class NResistor < RBA::DeviceClassResistor
+  def initialize
+    super
+    enable_parameter('R', false)
+    enable_parameter('W', true)
+    enable_parameter('L', true)
+  end
+end
+
+# MosCap device extractor
+class MosCap < RBA::DeviceClassCapacitor
+  def initialize
+    super
+    enable_parameter('C', false)
+    enable_parameter('A', true)
+    enable_parameter('P', true)
+  end
+end
+
+# MIMCAP device extractor
+class MIMCap < RBA::DeviceClassCapacitor
+  def initialize
+    super
+    enable_parameter('C', false)
+    enable_parameter('A', true)
+    enable_parameter('P', true)
+  end
+end
+# rubocop:enable Style/OneClassPerFile

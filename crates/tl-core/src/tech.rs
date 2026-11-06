@@ -27,9 +27,22 @@ pub struct Tech {
     pub layers: Vec<LayerInfo>,
 }
 
+/// Capa propia de TurboLayout para los textos de terminal de las PCells (S, D, G, B). No está en
+/// ningún PDK, así que DRC y LVS la ignoran.
+pub const PIN_LAYER: Layer = Layer::new(250, 0);
+
 pub fn gf180mcu() -> Tech {
     let lyp = include_str!("../../../tech/gf180mcu/gf180mcu.lyp");
-    Tech { name: "gf180mcu".into(), dbu_um: 0.001, layers: parse_lyp(lyp) }
+    let mut layers = parse_lyp(lyp);
+    layers.push(LayerInfo {
+        name: "TL_pin".into(),
+        layer: PIN_LAYER,
+        frame_color: "#9fe8ff".into(),
+        fill_color: "#9fe8ff".into(),
+        dither: vec!["."],
+        visible: true,
+    });
+    Tech { name: "gf180mcu".into(), dbu_um: 0.001, layers }
 }
 
 /// Contenido de `<tag>…</tag>` dentro de `s`, o `None` si falta o está vacío (`<tag/>`)

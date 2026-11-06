@@ -66,15 +66,37 @@ fn save_project(path: String, lib: Library) -> Result<(), String> {
     std::fs::write(&path, project::to_string(&lib, "gf180mcu")).map_err(|e| format!("{path}: {e}"))
 }
 
+/// Carpeta de un deck de KLayout del PDK (`drc` o `lvs`).
+/// TODO: empaquetarlos como recursos de Tauri; por ahora se usan los del repo
+fn klayout_deck(kind: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tech/gf180mcu/klayout").join(kind)
+}
+
 /// DRC de signoff con el deck oficial de KLayout. Corre en un hilo aparte (puede tardar).
 #[tauri::command]
 async fn run_signoff_drc(lib: Library, top: String) -> Result<signoff::SignoffResult, String> {
-    // TODO: empaquetar el deck como recurso de Tauri; por ahora se usa el del repo
-    let deck = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tech/gf180mcu/klayout/drc");
-    let work = std::env::temp_dir().join("turbolayout-signoff");
-    tauri::async_runtime::spawn_blocking(move || signoff::run_gf180(&lib, &top, &deck, &work))
+    let work = std::env::temp_dir().join("turbolayout-drc");
+    tauri::async_runtime::spawn_blocking(move || signoff::run_gf180(&lib, &top, &klayout_deck("drc"), &work))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// LVS con el deck oficial de KLayout contra la netlist importada en la celda `top`
+#[tauri::command]
+async fn run_lvs(lib: Library, top: String) -> Result<signoff::LvsResult, String> {
+    let nl = lib
+        .cell(&top)
+        .and_then(|c| c.netlist.clone())
+        .ok_or("La celda no tiene netlist: importá una con «Importar netlist…»")?;
+    let work = std::env::temp_dir().join("turbolayout-lvs");
+    tauri::async_runtime::spawn_blocking(move || signoff::run_lvs_gf180(&lib, &top, &nl, &klayout_deck("lvs"), &work))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn save_text(path: String, text: String) -> Result<(), String> {
+    std::fs::write(&path, text).map_err(|e| format!("{path}: {e}"))
 }
 
 #[tauri::command]
@@ -120,7 +142,7 @@ fn demo_layout() -> Library {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![get_tech, open_gds, save_gds, demo_layout, run_drc, get_rules, make_mosfet, import_netlist, ratsnest, open_layout, save_project, run_signoff_drc])
+        .invoke_handler(tauri::generate_handler![get_tech, open_gds, save_gds, demo_layout, run_drc, get_rules, make_mosfet, import_netlist, ratsnest, open_layout, save_project, run_signoff_drc, run_lvs, save_text])
         .run(tauri::generate_context!())
         .expect("error al iniciar TurboLayout");
 }

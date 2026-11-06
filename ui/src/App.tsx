@@ -153,6 +153,10 @@ export function App() {
   /** Último DRC de signoff y el layout sobre el que corrió (si cambió, el resultado quedó viejo) */
   const [signoff, setSignoff] = useState<{ violations: Violation[]; seconds: number; log: string; lib: Library } | null>(null);
   const [signoffRunning, setSignoffRunning] = useState(false);
+  const [lvs, setLvs] = useState<{ matched: boolean; extracted: string; schematic: string; seconds: number; log: string; lib: Library } | null>(
+    null,
+  );
+  const [lvsRunning, setLvsRunning] = useState(false);
   const [rats, setRats] = useState<Ratsnest | null>(null);
   const [hotNet, setHotNet] = useState<string | null>(null);
   const [zoomTo, setZoomTo] = useState<{ rect: Rect; seq: number } | null>(null);
@@ -601,6 +605,29 @@ export function App() {
       .finally(() => setSignoffRunning(false));
   };
 
+  const runLvs = () => {
+    if (!lib) return;
+    const snapshot = lib;
+    setLvsRunning(true);
+    invoke<{ matched: boolean; extracted: string; schematic: string; seconds: number; log: string }>('run_lvs', { lib: snapshot, top })
+      .then((r) => {
+        setLvs({ ...r, lib: snapshot });
+        setStatus(`LVS: ${r.matched ? 'el layout coincide con la netlist' : 'no coincide'} (${r.seconds.toFixed(1)} s)`);
+      })
+      .catch((e) => setStatus(`LVS: ${e}`))
+      .finally(() => setLvsRunning(false));
+  };
+
+  const saveExtracted = () =>
+    lvs &&
+    run(
+      save({ filters: NETLIST_FILTER, defaultPath: `${top}_extracted.cir` }).then(async (file) => {
+        if (!file) return;
+        await invoke('save_text', { path: file, text: lvs.extracted });
+        setStatus(`Netlist extraída guardada: ${file}`);
+      }),
+    );
+
   // Atajos de teclado
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -892,6 +919,43 @@ export function App() {
           {signoff && <p className="note">{signoff.seconds.toFixed(1)} s</p>}
           {signoff?.violations.map((v, i) => violationButton(v, 'signoff', i))}
         </div>
+        {cell?.netlist && (
+          <div className="drc">
+            <h3>
+              LVS (KLayout){' '}
+              {lvs && !lvsRunning && (
+                <span className={lvs.matched ? 'good' : 'bad'}>
+                  {lvs.matched ? 'coincide' : 'no coincide'}
+                  {lvs.lib !== lib ? ' · desactualizado' : ''}
+                </span>
+              )}
+            </h3>
+            <div className="row">
+              <button onClick={runLvs} disabled={lvsRunning}>
+                {lvsRunning ? 'Comparando…' : 'Correr LVS'}
+              </button>
+              {lvs?.extracted && (
+                <button onClick={saveExtracted} title="Netlist del layout para la simulación post-layout en TurboSpice">
+                  Guardar extraída…
+                </button>
+              )}
+            </div>
+            {lvs && (
+              <details>
+                <summary className="note">Detalle ({lvs.seconds.toFixed(1)} s)</summary>
+                <p className="note">Esquemático comparado:</p>
+                <pre className="log">{lvs.schematic}</pre>
+                <p className="note">Extraído del layout:</p>
+                <pre className="log">{lvs.extracted}</pre>
+                <pre className="log">{lvs.log}</pre>
+              </details>
+            )}
+            <p className="note">
+              Compara contra la netlist importada. El bulk de los nfet es el sustrato (SUB): el bloque necesita una toma de
+              sustrato, por ejemplo el guard ring de un nfet.
+            </p>
+          </div>
+        )}
       </aside>
       <footer className="status">
         <span>{status}</span>

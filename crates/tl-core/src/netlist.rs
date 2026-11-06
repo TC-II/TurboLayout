@@ -168,6 +168,43 @@ pub fn parse(text: &str, subckt: Option<&str>) -> Netlist {
     nl
 }
 
+/// Red global del sustrato en el LVS de GF180: el deck une todas las tomas de sustrato a `SUB`
+pub const SUBSTRATE: &str = "SUB";
+
+/// Esquemático en CDL para el LVS de KLayout: un subcircuito `top` con un `M` por dispositivo
+/// (W total, como en la netlist original). La red de bulk de los nfet pasa a llamarse `SUB` en
+/// todo el esquemático y es el único puerto, porque así extrae el deck el sustrato; el resto se
+/// compara por topología. `SUB` va siempre como puerto: sin ninguno, el lector SPICE de KLayout
+/// hace pines de todas las redes. Así el layout necesita una toma de sustrato (como cualquier
+/// bloque real). Devuelve error si hay nfet con bulks distintos (eso necesita DNWELL).
+pub fn to_cdl(nl: &Netlist, top: &str) -> Result<String, String> {
+    let mut bulks: Vec<&str> = nl
+        .devices
+        .iter()
+        .filter(|d| d.params.kind == MosType::Nfet)
+        .filter_map(|d| d.pins.get("B").map(|s| s.as_str()))
+        .collect();
+    bulks.sort_unstable();
+    bulks.dedup();
+    if bulks.len() > 1 {
+        return Err(format!("los nfet tienen bulks distintos ({}); sin DNWELL todos van al sustrato", bulks.join(", ")));
+    }
+    let net = |n: &str| if bulks.first() == Some(&n) { SUBSTRATE.to_string() } else { n.to_string() };
+    let mut out = format!("* Generado por TurboLayout desde la netlist importada\n.SUBCKT {top} {SUBSTRATE}\n");
+    for d in &nl.devices {
+        let model = match d.params.kind {
+            MosType::Nfet => "nfet_03v3",
+            MosType::Pfet => "pfet_03v3",
+        };
+        let name = d.name.trim_start_matches(['X', 'x', 'M', 'm']);
+        let w = d.params.w * d.params.fingers as f64;
+        let pin = |p: &str| d.pins.get(p).map_or("?".to_string(), |s| net(s));
+        out += &format!("M{name} {} {} {} {} {model} W={w:.3}u L={:.3}u\n", pin("D"), pin("G"), pin("S"), pin("B"), d.params.l);
+    }
+    out += &format!(".ENDS {top}\n");
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,6 +240,17 @@ mod tests {
         assert!(nl.skipped.is_empty());
         assert_eq!(nl.devices[2].params.kind, MosType::Pfet);
         assert_eq!((nl.devices[0].params.w, nl.devices[0].params.fingers), (2.0, 2));
+    }
+
+    #[test]
+    fn cdl() {
+        let nl = parse("XM2 out in 0 0 nfet_03v3 W=4u L=0.5u nf=2\n", None);
+        assert_eq!(
+            to_cdl(&nl, "top").unwrap(),
+            "* Generado por TurboLayout desde la netlist importada\n.SUBCKT top SUB\nM2 out in SUB SUB nfet_03v3 W=4.000u L=0.500u\n.ENDS top\n"
+        );
+        let two = parse("XM1 a b c x nfet_03v3\nXM2 a b c y nfet_03v3\n", None);
+        assert!(to_cdl(&two, "top").is_err());
     }
 
     #[test]

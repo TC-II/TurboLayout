@@ -12,6 +12,9 @@ Primer PDK: GF180MCU. Ver la investigación y la hoja de ruta en
 - **DRC en vivo**: subconjunto de reglas de GF180 ([rules.json](tech/gf180mcu/rules.json)) mientras editás.
 - **DRC de signoff**: el deck oficial de KLayout del PDK, con los errores en el mismo visor
   (necesita KLayout instalado).
+- **LVS**: el deck oficial de KLayout compara el layout con la netlist importada; la netlist
+  extraída se guarda para simular post-layout en TurboSpice. El bulk de los nfet es el sustrato
+  (`SUB`), así que el bloque necesita una toma de sustrato (por ejemplo, el guard ring de un nfet).
 - **Transistores paramétricos**: `nfet_03v3` / `pfet_03v3` con W, L, dedos, contacto de gate y guard ring.
 - **Layout guiado por esquemático**: importa la netlist `.cir` de TurboSpice (o xschem), coloca los
   transistores y dibuja flylines de lo que falta conectar; marca cortos entre redes.
@@ -42,7 +45,7 @@ examples/         netlists de prueba (ota5t.cir)
 
 ## Desarrollo
 
-Requiere Rust, Node y WebKitGTK 4.1 (Linux). Para el DRC de signoff, KLayout (probado con 0.30.13; `cargo test -- --ignored signoff` corre el deck oficial sobre las PCells)
+Requiere Rust, Node y WebKitGTK 4.1 (Linux). Para el DRC de signoff, KLayout (probado con 0.30.13; `cargo test -- --ignored` corre los decks oficiales de DRC y LVS sobre las PCells)
 (`sudo pacman -S klayout` en Arch/CachyOS, o poner la ruta en `TURBOLAYOUT_KLAYOUT`).
 
 ```sh

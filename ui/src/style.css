@@ -69,3 +69,5 @@ button.on { background: #2f3b55; border-color: #5a75b0; }
 .net small { color: var(--muted); }
 .net.on { background: #2f3b55; }
 .short { color: #ff6b6b; margin: 0 0 4px; }
+.log { font-size: 11px; background: #15181e; border: 1px solid var(--border); border-radius: 4px; padding: 6px; overflow: auto; max-height: 200px; white-space: pre; }
+.drc + .drc { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }

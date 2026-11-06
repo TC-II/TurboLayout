@@ -64,7 +64,9 @@ const NPLUS: Layer = Layer::new(32, 0);
 const PPLUS: Layer = Layer::new(31, 0);
 const CONT: Layer = Layer::new(33, 0);
 const M1: Layer = Layer::new(34, 0);
-const M1_LABEL: Layer = Layer::new(34, 10);
+/// Terminales de la PCell (S, D, G, B) sobre el Metal1: en una capa propia y no en Metal1_Label,
+/// porque el LVS de GF180 usa esos textos como nombres de red
+const PIN: Layer = crate::tech::PIN_LAYER;
 
 // Medidas en nm (dbu de GF180)
 const CO: i64 = 220; // CO.1
@@ -162,7 +164,7 @@ pub fn mosfet(p: &MosParams) -> Cell {
         contact_row(c, x0 + CO_ENC_POLY, x1 - CO_ENC_POLY, cy, false);
         let (mx0, mx1) = at_least(x0 + CO_ENC_POLY - M1_ENC_EOL, x1 - CO_ENC_POLY + M1_ENC_EOL, M1_MIN_LEN);
         rect(c, M1, mx0, cy - M1_W / 2, mx1, cy + M1_W / 2);
-        c.shapes.push(Shape::Label { layer: M1_LABEL, text: "G".into(), at: Point::new((x0 + x1) / 2, cy) });
+        c.shapes.push(Shape::Label { layer: PIN, text: "G".into(), at: Point::new((x0 + x1) / 2, cy) });
     };
     if tops {
         head_row(&mut c, w + gc_gap + CO / 2);
@@ -177,7 +179,7 @@ pub fn mosfet(p: &MosParams) -> Cell {
         let (y0, y1) = at_least(CO_ENC_COMP - M1_ENC_EOL, w - CO_ENC_COMP + M1_ENC_EOL, M1_MIN_LEN);
         rect(&mut c, M1, cx - M1_W / 2, y0, cx + M1_W / 2, y1);
         let name = if i % 2 == 0 { "S" } else { "D" };
-        c.shapes.push(Shape::Label { layer: M1_LABEL, text: name.into(), at: Point::new(cx, w / 2) });
+        c.shapes.push(Shape::Label { layer: PIN, text: name.into(), at: Point::new(cx, w / 2) });
     }
 
     // Implante del transistor
@@ -226,7 +228,7 @@ pub fn mosfet(p: &MosParams) -> Cell {
             MosType::Nfet => "B",
             MosType::Pfet => "B",
         };
-        c.shapes.push(Shape::Label { layer: M1_LABEL, text: tap.into(), at: Point::new((ox0 + ox1) / 2, oy0 + mid) });
+        c.shapes.push(Shape::Label { layer: PIN, text: tap.into(), at: Point::new((ox0 + ox1) / 2, oy0 + mid) });
         let enc = NWELL_ENC_NCOMP;
         well = (well.0.min(ox0 - enc), well.1.min(oy0 - enc), well.2.max(ox1 + enc), well.3.max(oy1 + enc));
     }

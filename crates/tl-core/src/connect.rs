@@ -17,8 +17,8 @@ const POLY: Layer = Layer::new(30, 0);
 const CONTACT: Layer = Layer::new(33, 0);
 const METALS: [Layer; 5] = [Layer::new(34, 0), Layer::new(36, 0), Layer::new(42, 0), Layer::new(46, 0), Layer::new(81, 0)];
 const VIAS: [Layer; 4] = [Layer::new(35, 0), Layer::new(38, 0), Layer::new(40, 0), Layer::new(41, 0)];
-/// Capa de los textos de terminal de las PCells (Metal1_Label)
-const M1_LABEL: Layer = Layer::new(34, 10);
+/// Capa de los textos de terminal de las PCells
+const PIN: Layer = crate::tech::PIN_LAYER;
 
 /// Una pieza conductora: capa (índice en `layers`) y sus rectángulos
 struct Piece {
@@ -143,8 +143,8 @@ fn apply(t: &Trans, p: Point) -> Point {
 }
 
 /// Flylines de `netlist` sobre la celda `top`. Las instancias se reconocen por nombre
-/// (`Instance::name` igual al del dispositivo) y sus terminales por los textos S/D/G/B en
-/// Metal1_Label de la celda del dispositivo.
+/// (`Instance::name` igual al del dispositivo) y sus terminales por los textos S/D/G/B en la capa
+/// de terminales (`tech::PIN_LAYER`) de la celda del dispositivo.
 pub fn ratsnest(lib: &Library, top: &str, netlist: &Netlist) -> Ratsnest {
     let Some(cell) = lib.cell(top) else { return Ratsnest::default() };
     let mut cn = Connectivity::build(lib, top);
@@ -156,7 +156,7 @@ pub fn ratsnest(lib: &Library, top: &str, netlist: &Netlist) -> Ratsnest {
         let Some(dcell) = lib.cell(&inst.cell) else { continue };
         for s in &dcell.shapes {
             if let Shape::Label { layer, text, at } = s {
-                if *layer != M1_LABEL {
+                if *layer != PIN {
                     continue;
                 }
                 if let Some(net) = dev.pins.get(text) {
