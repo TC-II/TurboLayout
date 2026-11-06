@@ -1,7 +1,7 @@
 # TurboLayout
 
 Editor de layout de circuitos integrados analógicos, open source, pensado para usarse junto con
-[TurboSpice](../TurboSpice). App de escritorio con Tauri: interfaz en React/TypeScript y núcleo en Rust.
+[TurboSpice](https://github.com/TC-II/TurboSpice). App de escritorio con Tauri: interfaz en React/TypeScript y núcleo en Rust.
 Primer PDK: GF180MCU. Ver la investigación y la hoja de ruta en
 [reports/Herramientas de layout analógico.md](reports/Herramientas%20de%20layout%20analógico.md).
 
