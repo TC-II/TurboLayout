@@ -1,0 +1,11 @@
+* OTA de 5 transistores en GF180MCU (3.3 V), formato de la netlist ngspice de TurboSpice
+.subckt ota5t inp inn out vdd vss vb
+* Par diferencial
+XM1 n1 inp tail vss nfet_03v3 W=4u L=0.5u nf=2
+XM2 out inn tail vss nfet_03v3 W=4u L=0.5u nf=2
+* Espejo de carga
+XM3 n1 n1 vdd vdd pfet_03v3 W=4u L=1u nf=2
+XM4 out n1 vdd vdd pfet_03v3 W=4u L=1u nf=2
+* Fuente de cola
+XM5 tail vb vss vss nfet_03v3 W=2u L=1u nf=1
+.ends ota5t

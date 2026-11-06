@@ -1,0 +1,202 @@
+# frozen_string_literal: true
+
+################################################################################################
+# Copyright 2023 GlobalFoundries PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+################################################################################################
+
+################################################################################################
+# INPUT OPTIONS
+################################################################################################
+#
+# See help:
+#   klayout -b -r gf180mcu.drc -rd help=true
+#
+################################################################################################
+
+#=======================================================================================================================
+#--------------------------------------------- GF 0.18um MCU DRC RULE DECK ---------------------------------------------
+#=======================================================================================================================
+require 'logger'
+require 'etc'
+require 'set'
+
+# ---- framework ----
+require_relative 'rule_framework'
+
+require_relative 'generic_layers'
+require_relative 'options'
+require_relative 'connectivity'
+require_relative 'helper'
+
+exec_start_time = Time.now
+
+logger = Logger.new($stdout)
+
+# Don't buffer the output
+# This is to ensure that for long running DRC rules
+# always the correct one is displayed.
+$stdout.sync = true
+
+# Custom formatter including timestamp and memory usage
+logger.formatter = proc do |_severity, datetime, _progname, msg|
+  memory_usage = "#{RBA::Timer.memory_size / 1024}K"
+  "#{datetime}: Memory Usage (#{memory_usage}) : #{msg}\n"
+end
+
+#================================================
+#----------------- FILE SETUP -------------------
+#================================================
+logger.info("Starting running GF180MCU Klayout DRC runset on #{$input}")
+logger.info("Ruby Version for klayout: #{RUBY_VERSION}")
+
+# As klayout wraps the current code, it is not trivial to access variables from
+# the rule files. Hence we define a global here for the registry
+Object.const_set(:GF180_DRC_REGISTRY, RuleFramework::Registry.new)
+
+deck_paths = Dir[File.join(__dir__, 'rule_decks', '*.{rb}')]
+deck_paths.each { |p| load p }
+
+raw_params = {
+  help: $help,
+  input: $input,
+  report: $report,
+  topcell: $topcell,
+  verbose: $verbose,
+  workers: $workers,
+  threads: $threads,
+  run_mode: $run_mode,
+  variant: $variant,
+  mim_option: $mim_option,
+  metal_top: $metal_top,
+  metal_level: $metal_level,
+  decks: $decks
+}
+opts = GF180DRC::Options.from_klayout_params(raw_params: raw_params, registry: GF180_DRC_REGISTRY)
+opts.log_to(logger)
+
+required_parallel = [0, 30, 9]
+current = RBA::Application.instance.version.split('.').map(&:to_i)
+
+if (current <=> required_parallel).negative? && (opts.workers > 1)
+  warn('Running parallel workers with klayout version prior than 0.30.9 is likely to fail due ' \
+       'to https://github.com/KLayout/klayout/issues/2339 . ' \
+       'Continuing execution, but you have been warned.')
+end
+
+if opts.topcell
+  source(opts.input.to_s, opts.topcell)
+else
+  source(opts.input.to_s)
+end
+
+# threads use in klayout drc functions
+threads(opts.threads)
+# verbose
+verbose(opts.verbose?)
+
+# === TILING MODE ===
+case opts.run_mode
+when 'tiling'
+  tiles(500.um)
+  tile_borders(10.um)
+when 'deep'
+  deep
+when 'flat'
+  flat
+else
+  warn("Could not recognized run_mode: #{opts.run_mode}")
+  exit
+end
+
+chip_area = extent.sized(0.0).area
+logger.info("Total area of the design is #{chip_area} um^2.")
+
+ctx = RuleFramework::Context.new(drc_engine: self, logger: logger, options: opts)
+ctx.extend(GF180DRC::OptionHelpers)
+
+#================================================
+#----------- VARIABLES DEFINITIONS --------------
+#================================================
+
+def met_top_thick(ctx)
+  case ctx.metal_top
+  when '6K'  then 0.69.um
+  when '9K'  then 0.99.um
+  when '11K' then 1.19.um
+  when '30K' then 3.035.um
+  else
+    raise ArgumentError, 'metal_top not recognized'
+  end
+end
+
+ctx.register_layer('metal_top_thickness') { met_top_thick(ctx) }
+
+#================================================
+#------------- LAYERS DEFINITIONS ---------------
+#================================================
+
+GF180DRC::GenericLayers.generate_generic_layers(ctx)
+
+#================================================
+#------------- LAYERS CONNECTIONS ---------------
+#================================================
+CONNECTIVITY_RULES = %w[dnwell ldnmos ldpmos lvpwell nat nwell].to_set.freeze
+
+connectivity_required =
+  opts.decks.any? do |deck|
+    deck.tags.any? do |t|
+      CONNECTIVITY_RULES.include?(t)
+    end
+  end
+
+if connectivity_required
+  logger.info('Rule requiring connectivity detected, constructing connectivity for the design.')
+
+  GF180DRC::Connectivity.build(ctx, self)
+
+  logger.info('Connectivity rules enabled, Netlist object will be generated.')
+  netlist
+else
+  logger.info('No rules requiring connectivity, skipping connectivity generation.')
+end
+
+#================================================
+#----------------- MAIN RUNSET ------------------
+#================================================
+setup_end_time = Time.now
+run_time = setup_end_time - exec_start_time
+logger.info("# Setup took #{run_time} seconds")
+
+# ---- Execute decks ----
+logger.info('Starting GF180MCU DRC rules.')
+
+runner = if opts.workers > 1
+           RuleFramework::Runners::Parallel.new(ctx, num_workers: opts.workers)
+         else
+           RuleFramework::Runners::Sequential.new(ctx)
+         end
+
+runner.run(opts.decks)
+
+status = RuleFramework::ReportStatus.new(ctx)
+status.parse_report
+status.log_status
+exec_end_time = Time.now
+run_time = exec_end_time - exec_start_time
+logger.info("# DRC Total Run time #{run_time} seconds")
+
+# LibreLane expects KLayout to return 0
+# even if it detected DRC errors.
+# exit(status.success? ? 0 : 1)

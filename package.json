@@ -1,0 +1,11 @@
+{
+  "name": "turbolayout",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "setup": "npm install --prefix ui",
+    "dev": "ui/node_modules/.bin/tauri dev",
+    "build": "ui/node_modules/.bin/tauri build",
+    "test": "cargo test --workspace && npm run typecheck --prefix ui"
+  }
+}
