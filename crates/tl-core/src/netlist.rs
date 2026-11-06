@@ -156,7 +156,8 @@ pub fn parse(text: &str, subckt: Option<&str>) -> Netlist {
                         l: (l * 1e6 * 200.0).round() / 200.0,
                         fingers: nf as u32,
                         gate_contact: GateContact::Top,
-                        guard_ring: false,
+                        // Los pfet llevan anillo: sin toma de nwell el signoff falla (DF.13_LV)
+                        guard_ring: kind == MosType::Pfet,
                     },
                     pins,
                 });

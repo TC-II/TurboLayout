@@ -209,13 +209,16 @@ pub fn mosfet(p: &MosParams) -> Cell {
         let (cy0, cy1) = (iy0 - CO_ENC_COMP + CO_SP, iy1 + CO_ENC_COMP - CO_SP);
         contact_row(&mut c, cy0, cy1, ox0 + mid, true);
         contact_row(&mut c, cy0, cy1, ox1 - mid, true);
-        // Implante del anillo: cubre el COMP del anillo con margen y llega a tope con el del transistor
+        // Implante del anillo: el COMP del anillo crecido `e` hacia afuera y hacia adentro (NP.5d /
+        // PP.5d piden que el implante pase el borde del COMP); el hueco sigue fuera del implante del
+        // transistor porque `gap` ≥ `e`
         let e = IMPLANT_ENC;
+        let (hx0, hy0, hx1, hy1) = (ix0 + e, iy0 + e, ix1 - e, iy1 - e);
         for &(x0, y0, x1, y1) in &[
-            (ox0 - e, oy0 - e, ox1 + e, iy0.min(imp.1)),
-            (ox0 - e, iy1.max(imp.3), ox1 + e, oy1 + e),
-            (ox0 - e, iy0.min(imp.1), ix0.min(imp.0), iy1.max(imp.3)),
-            (ix1.max(imp.2), iy0.min(imp.1), ox1 + e, iy1.max(imp.3)),
+            (ox0 - e, oy0 - e, ox1 + e, hy0),
+            (ox0 - e, hy1, ox1 + e, oy1 + e),
+            (ox0 - e, hy0, hx0, hy1),
+            (hx1, hy0, ox1 + e, hy1),
         ] {
             rect(&mut c, tap_implant, x0, y0, x1, y1);
         }

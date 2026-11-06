@@ -47,6 +47,8 @@ pub fn run_gf180(lib: &Library, top: &str, deck_dir: &Path, work: &Path) -> Resu
         .args(["-rd", &format!("topcell={top}")])
         .args(["-rd", &format!("report={}", report.display())])
         .args(["-rd", "variant=D", "-rd", "run_mode=flat", "-rd", "threads=max"])
+        // Las reglas de densidad son de chip completo: en un bloque suelto fallan siempre
+        .args(["-rd", "decks=all,-density"])
         .current_dir(deck_dir)
         .output()
         .map_err(|e| format!("{}: {e}", exe.display()))?;
@@ -73,12 +75,14 @@ fn unescape(s: &str) -> String {
 pub fn parse_lyrdb(xml: &str, dbu_um: f64) -> Vec<Violation> {
     // Descripciones de las categorías (pueden estar anidadas; alcanza con nombre → descripción)
     let mut desc: BTreeMap<String, String> = BTreeMap::new();
-    if let Some(cats) = tag_text(xml, "categories") {
-        for c in cats.split("<category>").skip(1) {
-            if let Some(name) = tag_text(c, "name") {
-                let d = tag_text(c, "description").unwrap_or("");
-                desc.insert(unescape(name.trim()), unescape(d.trim()));
-            }
+    let head = xml.find("<items>").map_or(xml, |i| &xml[..i]);
+    for c in head.split("<category>").skip(1) {
+        if let Some(name) = tag_text(c, "name") {
+            let d = tag_text(c, "description").unwrap_or("");
+            // Las descripciones de KLayout empiezan con «REGLA : »; se saca para no repetir el id
+            let d = unescape(d.trim());
+            let d = d.split_once(" : ").map_or(d.as_str(), |(_, rest)| rest);
+            desc.insert(unescape(name.trim()), d.split_whitespace().collect::<Vec<_>>().join(" "));
         }
     }
     let mut by_cat: BTreeMap<String, Vec<Rect>> = BTreeMap::new();
@@ -111,6 +115,42 @@ pub fn parse_lyrdb(xml: &str, dbu_um: f64) -> Vec<Violation> {
 mod tests {
     use super::*;
 
+    /// Corre el deck oficial sobre las PCells. Necesita KLayout: `cargo test -- --ignored signoff`
+    #[test]
+    #[ignore]
+    fn signoff_pcells() {
+        use crate::model::{Cell, Instance, Trans};
+        use crate::pcell::{mosfet, GateContact, MosParams, MosType};
+        let mut lib = Library::new("t", 0.001);
+        let mut top = Cell::new("top");
+        let mut x = 0;
+        for kind in [MosType::Nfet, MosType::Pfet] {
+            for (w, l, nf) in [(1.0, 0.28, 1), (2.0, 0.5, 2), (0.5, 0.28, 4), (5.0, 1.0, 3)] {
+                for gc in [GateContact::None, GateContact::Top, GateContact::Bottom, GateContact::Both] {
+                    for gr in [false, true] {
+                        // Un pfet sin anillo no tiene toma de nwell y el deck lo marca (DF.13_LV), con razón
+                        if kind == MosType::Pfet && !gr {
+                            continue;
+                        }
+                        let c = mosfet(&MosParams { kind, w, l, fingers: nf, gate_contact: gc, guard_ring: gr });
+                        let at = Point::new(x, 0);
+                        top.instances.push(Instance { cell: c.name.clone(), trans: Trans { origin: at, ..Trans::default() }, array: None, name: None });
+                        x += 20_000;
+                        lib.cells.push(c);
+                    }
+                }
+            }
+        }
+        lib.cells.push(top);
+        let deck = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tech/gf180mcu/klayout/drc");
+        let r = run_gf180(&lib, "top", &deck, &std::env::temp_dir().join("tl-signoff-test")).unwrap();
+        for v in &r.violations {
+            eprintln!("{} ({}): {}  {:?}", v.rule, v.rects.len(), v.desc, v.rects.first());
+        }
+        eprintln!("{:.1} s", r.seconds);
+        assert!(r.violations.is_empty());
+    }
+
     #[test]
     fn reads_report() {
         let xml = r#"<?xml version="1.0" encoding="utf-8"?>
@@ -130,7 +170,7 @@ mod tests {
         let v = parse_lyrdb(xml, 0.001);
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].rule, "M1.1");
-        assert!(v[0].desc.contains("0.23"));
+        assert_eq!(v[0].desc, "min. metal1 width : 0.23µm");
         assert_eq!(v[0].rects[0], Rect::new(Point::new(0, 0), Point::new(200, 1000)));
         assert_eq!(v[0].rects[1], Rect::new(Point::new(1000, 1000), Point::new(1500, 2000)));
     }

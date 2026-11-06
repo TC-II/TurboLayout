@@ -42,7 +42,7 @@ examples/         netlists de prueba (ota5t.cir)
 
 ## Desarrollo
 
-Requiere Rust, Node y WebKitGTK 4.1 (Linux). Para el DRC de signoff, KLayout
+Requiere Rust, Node y WebKitGTK 4.1 (Linux). Para el DRC de signoff, KLayout (probado con 0.30.13; `cargo test -- --ignored signoff` corre el deck oficial sobre las PCells)
 (`sudo pacman -S klayout` en Arch/CachyOS, o poner la ruta en `TURBOLAYOUT_KLAYOUT`).
 
 ```sh
